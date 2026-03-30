@@ -8,20 +8,14 @@ export interface OCRResult {
 }
 
 export async function performOCR(imageData: string): Promise<OCRResult> {
+  const worker = await Tesseract.createWorker('eng')
   try {
-    const { data } = await Tesseract.recognize(
-      imageData,
-      'eng',
-      {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            console.log(`Progress: ${Math.round(m.progress * 100)}%`)
-          }
-        },
-        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',
-        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
-      }
-    )
+    await worker.setParameters({
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',
+      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
+    })
+
+    const { data } = await worker.recognize(imageData)
 
     // Clean up the extracted text
     const cleanedText = data.text
@@ -49,33 +43,29 @@ export async function performOCR(imageData: string): Promise<OCRResult> {
       success: false,
       error: 'Failed to process image with OCR'
     }
+  } finally {
+    await worker.terminate()
   }
 }
 
 export async function performAdvancedOCR(imageData: string): Promise<OCRResult> {
-  try {
-    // First attempt with default settings
-    let result = await performOCR(imageData)
-    
-    if (result.success && result.text && result.text.length >= 4) {
-      return result
-    }
+  // First attempt with default settings
+  const result = await performOCR(imageData)
 
-    // If first attempt failed or result is too short, try with different settings
-    const { data } = await Tesseract.recognize(
-      imageData,
-      'eng',
-      {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            console.log(`Advanced OCR Progress: ${Math.round(m.progress * 100)}%`)
-          }
-        },
-        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-        tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
-        tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
-      }
-    )
+  if (result.success && result.text && result.text.length >= 4) {
+    return result
+  }
+
+  // If first attempt failed or result is too short, try with different settings
+  const worker = await Tesseract.createWorker('eng')
+  try {
+    await worker.setParameters({
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+      tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
+      tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+    })
+
+    const { data } = await worker.recognize(imageData)
 
     const cleanedText = data.text
       .replace(/\s+/g, ' ')
@@ -101,5 +91,7 @@ export async function performAdvancedOCR(imageData: string): Promise<OCRResult> 
       success: false,
       error: 'Failed to process image with advanced OCR'
     }
+  } finally {
+    await worker.terminate()
   }
 }
